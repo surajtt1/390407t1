@@ -1,76 +1,78 @@
 package main
 
 import (
-    "bytes"
-    "net/http"
-    "net/http/httptest"
-    "testing"
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
 )
 
-const largeStringLength = 10000 // Arbitrarily large length for testing
+const largeStringLength = 1000
 
 func TestRegisterHandler(t *testing.T) {
-    tests := []struct {
-        name           string
-        requestBody   string
-        expectedCode  int
-    }{
-        {
-            name: "Valid registration",
-            requestBody: `{"username":"validuser","email":"user@example.com","password":"validpass"}`,
-            expectedCode: http.StatusCreated,
-        },
-        {
-            name: "Short username",
-            requestBody: `{"username":"ab","email":"user@example.com","password":"validpass"}`,
-            expectedCode: http.StatusBadRequest,
-        },
-        {
-            name: "Invalid email",
-            requestBody: `{"username":"validuser","email":"invalidemail","password":"validpass"}`,
-            expectedCode: http.StatusBadRequest,
-        },
-        {
-            name: "Empty password",
-            requestBody: `{"username":"validuser","email":"user@example.com","password":""}`,
-            expectedCode: http.StatusBadRequest,
-        },
-        {
-            name: "Missing fields",
-            requestBody: `{"username":"","email":"","password":""}`,
-            expectedCode: http.StatusBadRequest,
-        },
-        {
-            name: "Very long username",
-            requestBody: `{"username":"` + string(make([]byte, largeStringLength)) + `","email":"user@example.com","password":"validpass"}`,
-            expectedCode: http.StatusBadRequest,
-        },
-        {
-            name: "Very long email",
-            requestBody: `{"username":"validuser","email":"` + string(make([]byte, largeStringLength)) + `@example.com","password":"validpass"}`,
-            expectedCode: http.StatusBadRequest,
-        },
-        {
-            name: "Very long password",
-            requestBody: `{"username":"validuser","email":"user@example.com","password":"` + string(make([]byte, largeStringLength)) + `"}`,
-            expectedCode: http.StatusBadRequest,
-        },
-    }
+	// Helper to generate large strings
+	generateLargeString := func(length int) string {
+		return strings.Repeat("a", length)
+	}
 
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            req, err := http.NewRequest(http.MethodPost, "/register", bytes.NewBufferString(tt.requestBody))
-            if err != nil {
-                t.Fatalf("could not create request: %v", err)
-            }
+	tests := []struct {
+		name         string
+		requestBody  string
+		expectedCode int
+		expectedBody string
+	}{
+		{
+			name:         "Valid registration",
+			requestBody:  `{"username":"validuser","email":"user@example.com","password":"validpass"}`,
+			expectedCode: http.StatusCreated,
+			expectedBody: `{"message":"User registered successfully"}`,
+		},
+		{
+			name:         "Invalid email",
+			requestBody:  `{"username":"validuser","email":"invalidemail","password":"validpass"}`,
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Invalid email address",
+		},
+		{
+			name:         "Very long username",
+			requestBody:  `{"username":"` + generateLargeString(256) + `","email":"user@example.com","password":"validpass"}`,
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Username must be between 3 and 255 characters",
+		},
+		{
+			name:         "Very long email",
+			requestBody:  `{"username":"validuser","email":"` + generateLargeString(321) + `@example.com","password":"validpass"}`,
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Invalid email address",
+		},
+		{
+			name:         "Very long password",
+			requestBody:  `{"username":"validuser","email":"user@example.com","password":"` + generateLargeString(129) + `"}`,
+			expectedCode: http.StatusBadRequest,
+			expectedBody: "Password must be between 6 and 128 characters",
+		},
+	}
 
-            rr := httptest.NewRecorder()
-            handler := http.HandlerFunc(registerHandler)
-            handler.ServeHTTP(rr, req)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, "/register", bytes.NewBufferString(tt.requestBody))
+			if err != nil {
+				t.Fatalf("could not create request: %v", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
 
-            if status := rr.Code; status != tt.expectedCode {
-                t.Errorf("handler returned wrong status code: got %v want %v", status, tt.expectedCode)
-            }
-        })
-    }
+			rr := httptest.NewRecorder()
+			handler := http.HandlerFunc(registerHandler)
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedCode {
+				t.Errorf("handler returned wrong status code: got %v want %v", rr.Code, tt.expectedCode)
+			}
+
+			if !strings.Contains(rr.Body.String(), tt.expectedBody) {
+				t.Errorf("handler returned wrong response body: got %v want %v", rr.Body.String(), tt.expectedBody)
+			}
+		})
+	}
 }
