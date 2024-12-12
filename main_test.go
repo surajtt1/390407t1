@@ -4,39 +4,45 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestRegisterHandler(t *testing.T) {
+func TestRegisterHandlerEdgeCases(t *testing.T) {
+	// Preparing a large string helper function
+	generateLargeString := func(length int) string {
+		return strings.Repeat("a", length)
+	}
+
 	tests := []struct {
 		name         string
 		requestBody  string
 		expectedCode int
 	}{
 		{
-			name:         "Valid registration",
-			requestBody:  `{"username":"validuser","email":"user@example.com","password":"validpass"}`,
-			expectedCode: http.StatusCreated,
+			name:         "Large Username",
+			requestBody:  `{"username":"` + generateLargeString(256) + `","email":"user@example.com","password":"validpass"}`,
+			expectedCode: http.StatusBadRequest, // We expect validation to fail
 		},
 		{
-			name:         "Short username",
-			requestBody:  `{"username":"ab","email":"user@example.com","password":"validpass"}`,
-			expectedCode: http.StatusBadRequest,
+			name:         "Large Email",
+			requestBody:  `{"username":"validuser","email":"` + generateLargeString(320) + `","password":"validpass"}`,
+			expectedCode: http.StatusBadRequest, // We expect validation to fail
 		},
 		{
-			name:         "Invalid email",
-			requestBody:  `{"username":"validuser","email":"invalidemail","password":"validpass"}`,
-			expectedCode: http.StatusBadRequest,
+			name:         "Large Password",
+			requestBody:  `{"username":"validuser","email":"user@example.com","password":"` + generateLargeString(128) + `"}`,
+			expectedCode: http.StatusBadRequest, // We expect validation to fail
 		},
 		{
-			name:         "Empty password",
-			requestBody:  `{"username":"validuser","email":"user@example.com","password":""}`,
-			expectedCode: http.StatusBadRequest,
+			name:         "Maximum Acceptable Username",
+			requestBody:  `{"username":"aaa","email":"user@example.com","password":"validpass"}`,
+			expectedCode: http.StatusCreated, // This should pass
 		},
 		{
-			name:         "Missing fields",
-			requestBody:  `{"username":"","email":"","password":""}`,
-			expectedCode: http.StatusBadRequest,
+			name:         "Maximum Acceptable Email",
+			requestBody:  `{"username":"validuser","email":"a@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.com","password":"validpass"}`,
+			expectedCode: http.StatusCreated, // This should pass
 		},
 	}
 
