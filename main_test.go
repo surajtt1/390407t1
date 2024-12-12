@@ -4,48 +4,32 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
-	"time"
 )
 
-func TestRegisterHandler_Concurrent(t *testing.T) {
-	// Number of concurrent requests to simulate
-	const numRequests = 100
+func BenchmarkRegisterHandler(b *testing.B) {
+	ts := httptest.NewServer(http.HandlerFunc(registerHandler))
+	defer ts.Close()
 
-	// WaitGroup to wait for all goroutines to finish
-	var wg sync.WaitGroup
-	wg.Add(numRequests)
+	client := &http.Client{}
+	url := ts.URL + "/register"
 
-	requestBody := `{"username":"testuser","email":"testuser@example.com","password":"validpass"}`
-
-	start := time.Now()
-
-	for i := 0; i < numRequests; i++ {
-		go func() {
-			defer wg.Done()
-			req, err := http.NewRequest(http.MethodPost, "/register", bytes.NewBufferString(requestBody))
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			req, err := http.NewRequest(http.MethodPost, url, bytes.NewBufferString(`{"username":"validuser","email":"user@example.com","password":"validpass"}`))
 			if err != nil {
-				t.Errorf("could not create request: %v", err)
-				return
+				b.Fatal(err)
 			}
 
-			rr := httptest.NewRecorder()
-			handler := http.HandlerFunc(registerHandler)
-
-			// Serve the HTTP request
-			handler.ServeHTTP(rr, req)
-
-			// Check the response status code
-			if status := rr.Code; status != http.StatusCreated {
-				t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusCreated)
+			res, err := client.Do(req)
+			if err != nil {
+				b.Fatal(err)
 			}
-		}()
-	}
+			_ = res.Body.Close()
 
-	// Wait for all goroutines to finish
-	wg.Wait()
-	elapsed := time.Since(start)
-
-	t.Logf("Completed %d requests in %s", numRequests, elapsed)
+			if res.StatusCode != http.StatusCreated {
+				b.Errorf("expected status %d, got %d", http.StatusCreated, res.StatusCode)
+			}
+		}
+	})
 }
